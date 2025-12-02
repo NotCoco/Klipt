@@ -1,0 +1,30 @@
+{
+  "name": "klipt-utility",
+  "version": "1.0.0",
+  "description": "An Electron-based desktop utility for processing HLS streams and creating local archives.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0"
+  },
+  "build": {
+    "appId": "com.klipt.app",
+    "productName": "Klipt",
+    "asarUnpack": [
+      "**/node_modules/ffmpeg-static/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icon.png"
+    }
+  }
+}

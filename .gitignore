@@ -1,0 +1,24 @@
+Logs
+
+logs
+.log
+npm-debug.log
+
+Dependency directories
+
+node_modules/
+
+Electron-builder output
+
+dist/
+release/
+
+User data (local binaries downloaded by your app)
+
+userData/
+bin/
+
+OS generated files
+
+.DS_Store
+Thumbs.db
