@@ -34,7 +34,6 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 500,
     height: 650,
-    // FIX: Tells the actual window/taskbar to use your icon
     icon: path.join(__dirname, 'icon.png'), 
     webPreferences: {
       nodeIntegration: true,
@@ -63,8 +62,13 @@ async function initDependencyCheck() {
   if (fs.existsSync(YT_DLP_PATH)) {
     const stats = fs.statSync(YT_DLP_PATH);
     if (stats.size > 0) {
-        mainWindow.webContents.send('setup-status', { status: 'ready', message: 'System Ready' });
-        return;
+        try {
+            fs.accessSync(YT_DLP_PATH, fs.constants.X_OK);
+            mainWindow.webContents.send('setup-status', { status: 'ready', message: 'System Ready' });
+            return;
+        } catch (e) {
+            console.log("Binary exists but locked. Retrying...");
+        }
     }
   }
 
@@ -75,7 +79,26 @@ async function initDependencyCheck() {
       mainWindow.webContents.send('setup-status', { status: 'error', message: 'Connection Failed.' });
     } else {
       if (!IS_WIN) fs.chmodSync(YT_DLP_PATH, 0o755);
-      mainWindow.webContents.send('setup-status', { status: 'ready', message: 'Engine Installed' });
+      
+      mainWindow.webContents.send('setup-status', { status: 'downloading', message: 'Verifying Engine...' });
+      
+      let retries = 0;
+      const verifyLoop = setInterval(() => {
+          try {
+              fs.renameSync(YT_DLP_PATH, YT_DLP_PATH);
+              clearInterval(verifyLoop);
+              mainWindow.webContents.send('setup-status', { status: 'ready', message: 'Engine Installed' });
+          } catch (e) {
+              retries++;
+              if (retries > 5) { 
+                  clearInterval(verifyLoop);
+                  mainWindow.webContents.send('setup-status', { 
+                      status: 'locked', 
+                      message: 'Setup Complete! Please restart Klipt to finish.' 
+                  });
+              }
+          }
+      }, 1000);
     }
   });
 }
@@ -90,7 +113,7 @@ function downloadFile(url, dest, cb) {
     response.pipe(file);
     
     file.on('finish', () => {
-        setTimeout(cb, 1000); 
+        setTimeout(() => file.close(cb), 1000); 
     });
   });
   
@@ -111,7 +134,6 @@ ipcMain.on('start-clip', (event, data) => {
   const { url, startTime, endTime, outputName, quality } = data; 
   const sender = event.sender;
 
-  // 1. Strict Regex
   const timeRegex = /^\d{2}:[0-5]\d:[0-5]\d$/;
   if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
       sender.send('log', { type: 'error', message: 'Invalid format. Use HH:MM:SS' });
@@ -119,7 +141,6 @@ ipcMain.on('start-clip', (event, data) => {
       return;
   }
 
-  // 2. Logic Check
   if (toSeconds(startTime) >= toSeconds(endTime)) {
       sender.send('log', { type: 'error', message: 'End time must be after Start time' });
       sender.send('process-finished', { success: false });
@@ -134,11 +155,11 @@ ipcMain.on('start-clip', (event, data) => {
       fixedFfmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
   }
 
-  // Build Arguments
   const args = [
     url,
     '--ffmpeg-location', fixedFfmpegPath,
     '--download-sections', `*${startTime}-${endTime}`,
+    // --- Removed force-keyframes-at-cuts for Speed Optimization ---
     '-o', outputPath,
     '--force-overwrites',
     '-S', 'ext:mp4:m4a',
@@ -149,7 +170,6 @@ ipcMain.on('start-clip', (event, data) => {
       args.push('-f', `bv*[height<=${quality}][ext=mp4]+ba[ext=m4a]/b[height<=${quality}]/b`);
   }
 
-  // --- RETRY WRAPPER ---
   const executeDownload = (retryCount = 0) => {
       try {
           const proc = spawn(YT_DLP_PATH, args);
@@ -174,14 +194,12 @@ ipcMain.on('start-clip', (event, data) => {
           
           proc.on('error', (err) => {
               console.error('Spawn Error:', err);
-              
               if (err.code === 'EBUSY' && retryCount < 3) {
                   const waitTime = 2000; 
                   sender.send('terminal-data', `\n[System] Engine is locked (Antivirus). Retrying in ${waitTime/1000}s... (Attempt ${retryCount + 1}/3)\n`);
                   setTimeout(() => executeDownload(retryCount + 1), waitTime);
                   return;
               }
-
               let msg = `Spawn Error: ${err.message}`;
               sender.send('log', { type: 'error', message: msg });
               sender.send('process-finished', { success: false });

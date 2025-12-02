@@ -16,20 +16,20 @@
         
         /* Validation Styles */
         .invalid { border-color: #ef4444 !important; color: #ef4444 !important; }
-        .valid { border-color: #06b6d4 !important; } /* Cyan-500 */
+        .valid { border-color: #06b6d4 !important; } 
     </style>
 </head>
 <body class="bg-slate-900 text-slate-200 font-sans h-screen flex flex-col relative overflow-hidden">
 
     <!-- SETUP OVERLAY -->
     <div id="loading-overlay" class="absolute inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center">
-        <div class="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <!-- Spinner has ID 'spinner' now so we can hide it -->
+        <div id="spinner" class="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
         <h2 class="text-white font-bold text-lg">Initializing Klipt</h2>
         <p id="setup-msg" class="text-slate-500 text-sm mt-2">Checking engine...</p>
     </div>
 
     <!-- HEADER -->
-    <!-- FIX: Removed justify-between, added gap-4 to keep version on the left safe from window buttons -->
     <div class="px-6 py-4 border-b border-slate-700 bg-slate-800 flex items-center gap-4 shrink-0">
         <div class="flex items-center gap-3">
             <img src="icon.png" class="w-8 h-8 object-contain drop-shadow-lg" alt="Logo">
@@ -110,6 +110,7 @@
         const { ipcRenderer } = require('electron');
         const overlay = document.getElementById('loading-overlay');
         const setupMsg = document.getElementById('setup-msg');
+        const spinner = document.getElementById('spinner'); // Added spinner ref
         const clipBtn = document.getElementById('clipBtn');
         const terminal = document.getElementById('terminal');
         const progressBar = document.getElementById('progressBar');
@@ -150,7 +151,6 @@
                 }
             }
 
-            // Also check if URL is empty
             const urlVal = document.getElementById('url').value;
             if (!urlVal) isValid = false;
 
@@ -176,7 +176,14 @@
 
         ipcRenderer.on('setup-status', (e, data) => {
             setupMsg.textContent = data.message;
-            if (data.status === 'ready') setTimeout(() => overlay.classList.add('fade-out'), 500);
+            if (data.status === 'ready') {
+                setTimeout(() => overlay.classList.add('fade-out'), 500);
+            }
+            // HANDLING THE LOCKED STATE
+            if (data.status === 'locked') {
+                spinner.style.display = 'none'; // Hide spinner
+                setupMsg.className = "text-orange-400 text-sm mt-2 font-bold"; // Warning color
+            }
         });
 
         clipBtn.onclick = () => {
