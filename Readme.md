@@ -1,14 +1,12 @@
 # Klipt
 
-The ultimate desktop media clipper.
-
-![Klipt demo](assets/demo.gif)
-
 ## Overview
 Klipt is an Electron-based desktop utility for processing HLS streams and creating local archives. It wraps yt-dlp and ffmpeg, showcasing child-process management, binary orchestration, and cross-platform desktop architecture.
 
+![Klipt demo](assets/demo.gif)
+
 ## Key features
-- Precision clipping with frame-accurate start/end times
+- * **High-Speed Clipping:** Prioritizes maximum download speed by snapping cuts to the nearest keyframe (approx. 5s chunks).
 - Dynamic engine loading that installs the latest binaries on first run
 - System resilience via wait-and-retry handling for Windows EBUSY locks
 - Format interoperability by forcing MP4 containerization for universal playback
