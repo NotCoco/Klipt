@@ -1,72 +1,48 @@
-Klipt
+# Klipt
 
 The ultimate desktop media clipper.
 
-Klipt is an Electron-based desktop utility designed for processing HLS streams and creating local archives. It serves as a GUI wrapper for yt-dlp and ffmpeg, providing a technical demonstration of child-process management, binary orchestration, and cross-platform desktop architecture.
+![Klipt demo](assets/demo.gif)
 
-Key Features
+## Overview
+Klipt is an Electron-based desktop utility for processing HLS streams and creating local archives. It wraps yt-dlp and ffmpeg, showcasing child-process management, binary orchestration, and cross-platform desktop architecture.
 
-Precision Clipping: Frame-accurate start/end time processing.
+## Key features
+- Precision clipping with frame-accurate start/end times
+- Dynamic engine loading that installs the latest binaries on first run
+- System resilience via wait-and-retry handling for Windows EBUSY locks
+- Format interoperability by forcing MP4 containerization for universal playback
 
-Dynamic Engine Loading: Auto-detects and installs the latest binaries on the first run to ensure compatibility.
-
-System Resilience: Implements "Wait-and-Retry" logic to handle Windows EBUSY filesystem locks during antivirus scans.
-
-Format Interoperability: Forces MP4 containerization for universal playback compatibility, solving common WebM/Opus issues.
-
-🛠 Technical Implementation
-
-This project demonstrates several system-integration patterns suitable for modern desktop engineering:
-
-1. Child Process Management
-
-The application spawns independent processes for media handling to keep the main thread unblocked. It uses Node.js spawn to interface with the CLI backend.
-
-// Example: Streaming terminal data to Renderer
+## Technical implementation
+### Child process management
+Klipt spawns dedicated processes for media handling so the main thread stays responsive. It uses `node:child_process` spawn to interface with the CLI backend and streams output to the renderer:
+```js
+// Stream terminal data to the renderer process
 proc.stdout.on('data', (d) => {
   const str = d.toString();
   sender.send('terminal-data', str);
 });
+```
 
+### Binary handling in production
+To work around Electron ASAR packing limits (executables cannot run inside the archive), Klipt:
+- Detects the OS environment
+- Checks for external binaries in `userData`
+- Downloads dependencies on demand when missing
+- Points spawn to `app.asar.unpacked` for static assets like FFmpeg
 
-2. Binary Handling in Production
+## Setup
+- Prerequisite: Node.js v16+
+- Install dependencies: `npm install`
 
-To handle the "ASAR packing" limitation in Electron (where executables cannot run inside the archive), the app:
+## Development
+- Run locally: `npm start`
+- Build for production (Windows/NSIS): `npm run dist`
 
-Detects the OS environment.
+## Stack
+- Core: Electron, Node.js
+- UI: HTML5, TailwindCSS
+- Engine: yt-dlp, FFmpeg-static
 
-Checks for external binaries in userData.
-
-Downloads dependencies dynamically if missing.
-
-Points spawn to app.asar.unpacked for static assets like FFmpeg.
-
-Setup & Development
-
-Prerequisites: Node.js v16+
-
-Install Dependencies
-
-npm install
-
-
-Run Locally
-
-npm start
-
-
-Build for Production (Windows/NSIS)
-
-npm run dist
-
-
-Stack
-
-Core: Electron, Node.js
-
-UI: HTML5, TailwindCSS
-
-Engine: yt-dlp, FFmpeg-static
-
-Disclaimer:
+## Disclaimer
 Klipt is a graphical interface intended for personal archiving and offline analysis. Users are responsible for ensuring compliance with the Terms of Service of the platforms they utilize.

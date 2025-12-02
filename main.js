@@ -34,6 +34,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 500,
     height: 650,
+    // FIX: Tells the actual window/taskbar to use your icon
+    icon: path.join(__dirname, 'icon.png'), 
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -173,9 +175,8 @@ ipcMain.on('start-clip', (event, data) => {
           proc.on('error', (err) => {
               console.error('Spawn Error:', err);
               
-              // RETRY LOGIC for EBUSY
               if (err.code === 'EBUSY' && retryCount < 3) {
-                  const waitTime = 2000; // 2 seconds
+                  const waitTime = 2000; 
                   sender.send('terminal-data', `\n[System] Engine is locked (Antivirus). Retrying in ${waitTime/1000}s... (Attempt ${retryCount + 1}/3)\n`);
                   setTimeout(() => executeDownload(retryCount + 1), waitTime);
                   return;
@@ -193,6 +194,5 @@ ipcMain.on('start-clip', (event, data) => {
       }
   };
 
-  // Start the first attempt
   executeDownload();
 });
