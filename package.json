@@ -7,7 +7,7 @@
     "start": "electron .",
     "dist": "electron-builder"
   },
-  "author": "Your Name",
+  "author": "Kerim Yalchin",
   "license": "MIT",
   "devDependencies": {
     "electron": "^30.0.0",
@@ -27,4 +27,5 @@
       "icon": "icon.png"
     }
   }
+
 }
