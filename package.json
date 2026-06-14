@@ -1,7 +1,7 @@
 {
   "name": "klipt-utility",
   "version": "1.0.0",
-  "description": "An Electron-based desktop utility for processing HLS streams and creating local archives.",
+  "description": "A desktop video clipping tool for saving timed MP4 clips from video URLs.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -10,8 +10,8 @@
   "author": "Kerim Yalchin",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^30.0.0",
-    "electron-builder": "^24.13.3"
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
     "ffmpeg-static": "^5.2.0"
@@ -27,5 +27,4 @@
       "icon": "icon.png"
     }
   }
-
 }

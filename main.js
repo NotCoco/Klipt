@@ -22,6 +22,8 @@ const IS_WIN = process.platform === 'win32';
 const BIN_DIR = path.join(app.getPath('userData'), 'bin');
 const YT_DLP_FILENAME = IS_WIN ? 'yt-dlp.exe' : 'yt-dlp';
 const YT_DLP_PATH = path.join(BIN_DIR, YT_DLP_FILENAME);
+const YT_DLP_DOWNLOAD_PATH = `${YT_DLP_PATH}.download`;
+const YT_DLP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 // Download URL
 const YT_DLP_URL = IS_WIN 
@@ -44,11 +46,11 @@ function createWindow() {
     show: true 
   });
 
-  mainWindow.loadFile('index.html');
-
-  mainWindow.once('ready-to-show', () => {
+  mainWindow.webContents.once('did-finish-load', () => {
     initDependencyCheck();
   });
+
+  mainWindow.loadFile('index.html');
 }
 
 app.whenReady().then(createWindow);
@@ -59,67 +61,159 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 async function initDependencyCheck() {
   if (!fs.existsSync(BIN_DIR)) fs.mkdirSync(BIN_DIR, { recursive: true });
 
-  if (fs.existsSync(YT_DLP_PATH)) {
-    const stats = fs.statSync(YT_DLP_PATH);
-    if (stats.size > 0) {
-        try {
-            fs.accessSync(YT_DLP_PATH, fs.constants.X_OK);
-            mainWindow.webContents.send('setup-status', { status: 'ready', message: 'System Ready' });
-            return;
-        } catch (e) {
-            console.log("Binary exists but locked. Retrying...");
-        }
+  try {
+    const hasEngine = isUsableBinary(YT_DLP_PATH);
+    if (!hasEngine) {
+      await installYtDlp('Initializing engine...');
+    } else if (isYtDlpStale()) {
+      mainWindow.webContents.send('setup-status', { status: 'downloading', message: 'Updating engine...' });
+      try {
+        await installYtDlp('Updating engine...');
+      } catch (err) {
+        console.warn('Engine update failed; using cached yt-dlp:', err);
+        mainWindow.webContents.send('log', {
+          type: 'error',
+          message: `Engine update failed, using cached yt-dlp: ${err.message}`
+        });
+      }
     }
-  }
 
-  mainWindow.webContents.send('setup-status', { status: 'downloading', message: 'Initializing Engine (First Run)...' });
-  
-  downloadFile(YT_DLP_URL, YT_DLP_PATH, (err) => {
-    if (err) {
-      mainWindow.webContents.send('setup-status', { status: 'error', message: 'Connection Failed.' });
-    } else {
-      if (!IS_WIN) fs.chmodSync(YT_DLP_PATH, 0o755);
-      
-      mainWindow.webContents.send('setup-status', { status: 'downloading', message: 'Verifying Engine...' });
-      
-      let retries = 0;
-      const verifyLoop = setInterval(() => {
-          try {
-              fs.renameSync(YT_DLP_PATH, YT_DLP_PATH);
-              clearInterval(verifyLoop);
-              mainWindow.webContents.send('setup-status', { status: 'ready', message: 'Engine Installed' });
-          } catch (e) {
-              retries++;
-              if (retries > 5) { 
-                  clearInterval(verifyLoop);
-                  mainWindow.webContents.send('setup-status', { 
-                      status: 'locked', 
-                      message: 'Setup Complete! Please restart Klipt to finish.' 
-                  });
-              }
-          }
-      }, 1000);
+    mainWindow.webContents.send('setup-status', { status: 'downloading', message: 'Verifying engine...' });
+    await waitForBinaryReady(YT_DLP_PATH);
+    mainWindow.webContents.send('setup-status', { status: 'ready', message: 'System Ready' });
+  } catch (err) {
+    mainWindow.webContents.send('setup-status', { status: 'error', message: `Engine setup failed: ${err.message}` });
+  }
+}
+
+function isUsableBinary(filePath) {
+  try {
+    const stats = fs.statSync(filePath);
+    if (stats.size <= 0) return false;
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function isYtDlpStale() {
+  try {
+    const stats = fs.statSync(YT_DLP_PATH);
+    return Date.now() - stats.mtimeMs > YT_DLP_MAX_AGE_MS;
+  } catch (e) {
+    return true;
+  }
+}
+
+async function installYtDlp(message) {
+  mainWindow.webContents.send('setup-status', { status: 'downloading', message });
+  cleanupTempFile(YT_DLP_DOWNLOAD_PATH);
+  await downloadFile(YT_DLP_URL, YT_DLP_DOWNLOAD_PATH);
+  if (!IS_WIN) fs.chmodSync(YT_DLP_DOWNLOAD_PATH, 0o755);
+  replaceFile(YT_DLP_DOWNLOAD_PATH, YT_DLP_PATH);
+}
+
+function cleanupTempFile(filePath) {
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (e) {
+    console.warn(`Could not remove temp file ${filePath}:`, e);
+  }
+}
+
+function replaceFile(tempPath, finalPath) {
+  const backupPath = `${finalPath}.bak`;
+  if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+
+  const hadOriginal = fs.existsSync(finalPath);
+  if (hadOriginal) fs.renameSync(finalPath, backupPath);
+
+  try {
+    fs.renameSync(tempPath, finalPath);
+    if (hadOriginal) fs.unlinkSync(backupPath);
+  } catch (err) {
+    if (hadOriginal && !fs.existsSync(finalPath) && fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, finalPath);
     }
+    throw err;
+  }
+}
+
+function waitForBinaryReady(filePath, retries = 5) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const verify = () => {
+      try {
+        fs.renameSync(filePath, filePath);
+        resolve();
+      } catch (err) {
+        attempts++;
+        if (attempts > retries) {
+          reject(new Error('Engine is still locked. Restart Klipt and try again.'));
+          return;
+        }
+        setTimeout(verify, 1000);
+      }
+    };
+    verify();
   });
 }
 
-function downloadFile(url, dest, cb) {
-  const file = fs.createWriteStream(dest);
-  const request = https.get(url, (response) => {
-    if (response.statusCode === 302 || response.statusCode === 301) {
-      downloadFile(response.headers.location, dest, cb);
+function downloadFile(url, dest, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirects > 5) {
+      reject(new Error('Too many redirects while downloading engine.'));
       return;
     }
-    response.pipe(file);
-    
-    file.on('finish', () => {
-        setTimeout(() => file.close(cb), 1000); 
+
+    let settled = false;
+    const file = fs.createWriteStream(dest);
+    const cleanupAndReject = (err) => {
+      if (settled) return;
+      settled = true;
+      file.close(() => {
+        fs.unlink(dest, () => reject(err));
+      });
+    };
+    const finishDownload = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+
+    const request = https.get(url, (response) => {
+      const status = response.statusCode || 0;
+
+      if ([301, 302, 303, 307, 308].includes(status)) {
+        response.resume();
+        const location = response.headers.location;
+        if (!location) {
+          cleanupAndReject(new Error('Engine download redirected without a location header.'));
+          return;
+        }
+        file.close(() => {
+          fs.unlink(dest, () => {});
+          downloadFile(new URL(location, url).toString(), dest, redirects + 1).then(resolve, reject);
+        });
+        return;
+      }
+
+      if (status !== 200) {
+        response.resume();
+        cleanupAndReject(new Error(`Engine download failed with HTTP ${status}.`));
+        return;
+      }
+
+      response.pipe(file);
+
+      file.on('finish', () => {
+        file.close(finishDownload);
+      });
     });
-  });
-  
-  request.on('error', (err) => {
-    fs.unlink(dest, () => {});
-    if (cb) cb(err);
+
+    request.on('error', cleanupAndReject);
+    file.on('error', cleanupAndReject);
   });
 }
 
@@ -147,7 +241,7 @@ ipcMain.on('start-clip', (event, data) => {
       return;
   }
   
-  const safeName = outputName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  const safeName = (outputName || 'klipt_clip').replace(/[^a-z0-9]/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || `klipt_clip_${Date.now()}`;
   const outputPath = path.join(app.getPath('downloads'), `${safeName}.mp4`);
   
   let fixedFfmpegPath = ffmpegPath;
@@ -157,6 +251,8 @@ ipcMain.on('start-clip', (event, data) => {
 
   const args = [
     url,
+    '--no-playlist',
+    '--newline',
     '--ffmpeg-location', fixedFfmpegPath,
     '--download-sections', `*${startTime}-${endTime}`,
     // --- Removed force-keyframes-at-cuts for Speed Optimization ---
